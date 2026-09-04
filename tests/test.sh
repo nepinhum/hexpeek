@@ -50,6 +50,17 @@ cmp -s "$tmp/expected.txt" "$tmp/actual.txt" ||
     fail "hex dump output should match exactly"
 test ! -s "$tmp/dump.err" || fail "successful dump should not write stderr"
 
+if test -w /dev/full; then
+    set +e
+    "$root/hexpeek" "$tmp/sample.bin" >/dev/full 2>"$tmp/full.err"
+    status=$?
+    set -e
+    test "$status" -eq 1 ||
+        fail "stdout write failure should exit with status 1"
+    grep -Fq 'hexpeek: stdout:' "$tmp/full.err" ||
+        fail "stdout write failure should be reported"
+fi
+
 : >"$tmp/empty.bin"
 "$root/hexpeek" "$tmp/empty.bin" >"$tmp/empty.out" 2>"$tmp/empty.err" ||
     fail "empty file should succeed"

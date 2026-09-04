@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 
 #define ROW_SIZE 16U
 
@@ -23,11 +24,11 @@ static void report_error(const char *path,
     fprintf(stderr, "hexpeek: %s: %s\n", path, detail);
 }
 
-static void print_row(size_t offset,
+static void print_row(unsigned long long offset,
                       const unsigned char bytes[ROW_SIZE],
                       size_t count)
 {
-    printf("%08zx  ", offset);
+    printf("%08llx  ", offset);
 
     for (size_t i = 0U; i < ROW_SIZE; ++i) {
         if (i < count) {
@@ -56,7 +57,7 @@ static void print_row(size_t offset,
 static int dump(FILE *file, const char *path)
 {
     unsigned char bytes[ROW_SIZE];
-    size_t offset = 0U;
+    unsigned long long offset = 0U;
 
     for (;;) {
         errno = 0;
@@ -65,7 +66,11 @@ static int dump(FILE *file, const char *path)
 
         if (count > 0U) {
             print_row(offset, bytes, count);
-            offset += count;
+            if (offset > ULLONG_MAX - (unsigned long long)count) {
+                report_error(path, "offset overflow", 0);
+                return 1;
+            }
+            offset += (unsigned long long)count;
         }
         if (count == ROW_SIZE) {
             continue;
@@ -76,6 +81,21 @@ static int dump(FILE *file, const char *path)
         }
         return 0;
     }
+}
+
+static int flush_output(void)
+{
+    errno = 0;
+    if (fflush(stdout) != 0) {
+        int write_error = errno;
+        report_error("stdout", "write error", write_error);
+        return 1;
+    }
+    if (ferror(stdout) != 0) {
+        report_error("stdout", "write error", 0);
+        return 1;
+    }
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -100,6 +120,10 @@ int main(int argc, char **argv)
     }
 
     int status = dump(file, argv[1]);
+    if (status == 0 && flush_output() != 0) {
+        status = 1;
+    }
+
     errno = 0;
     if (fclose(file) != 0) {
         int close_error = errno;
